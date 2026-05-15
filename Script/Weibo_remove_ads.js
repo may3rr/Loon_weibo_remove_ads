@@ -8,7 +8,6 @@ const url = $request.url;
 if (!$response) $done({});
 if (!$response.body) $done({});
 let body = $response.body;
-const debugShowRemovedFeed = true;
 
 // 微博详情页菜单配置
 const itemMenusConfig = {
@@ -1104,7 +1103,6 @@ if (url.includes("/interface/sdk/sdkad.php")) {
       obj.statuses = newStatuses;
     }
   } else if (url.includes("/2/statuses/container_timeline?") || url.includes("/2/statuses/container_timeline_unread")) {
-    const isFriendCircleTimeline = isFriendCircleTimelineContext(url, obj);
     if (obj?.loadedInfo?.headers) {
       delete obj.loadedInfo.headers; // 首页关注tab信息流
     }
@@ -1114,14 +1112,12 @@ if (url.includes("/interface/sdk/sdkad.php")) {
     if (obj?.items?.length > 0) {
       let newItems = [];
       for (let item of obj.items) {
-        const dataAd = isTimelineAd(item?.data);
-        const statusAd = isTimelineAd(item?.status);
-        if (dataAd || statusAd) {
-          showRemovedFeedItem(newItems, item, dataAd ? "isTimelineAd(item.data)" : "isTimelineAd(item.status)", dataAd ? "data" : "status");
-          continue;
-        }
+        if (
+          (isFriendCirclePost(item?.data) || !isAd(item?.data)) &&
+          (isFriendCirclePost(item?.status) || !isAd(item?.status))
+        ) {
           if (item?.category === "dynamic") {
-            const isFriendCircle = isFriendCircleTimeline || isFriendCirclePost(item?.status);
+            const isFriendCircle = isFriendCirclePost(item?.status);
             if (item?.status?.action_button_icon_dic) {
               delete item.status.action_button_icon_dic;
             }
@@ -1133,24 +1129,20 @@ if (url.includes("/interface/sdk/sdkad.php")) {
             }
             if (item.status?.title?.structs && !isFriendCirclePost(item?.status)) {
               // 移除 未关注人消息 (你关注的博主，他自己关注的别的博主的微博消息)
-              showRemovedFeedItem(newItems, item, "item.status.title.structs", "status");
               continue;
             }
             // 快转内容
             if (item?.status?.screen_name_suffix_new?.length > 0) {
               if (item?.status?.screen_name_suffix_new?.[3]?.content === "快转了") {
-                showRemovedFeedItem(newItems, item, "item.status.screen_name_suffix_new[3].content === 快转了", "status");
                 continue;
               }
             }
             // 美妆精选季
             if (item?.status?.title?.text?.includes("精选")) {
-              showRemovedFeedItem(newItems, item, "item.status.title.text includes 精选", "status");
               continue;
             }
             // 未关注博主
             if (item?.status?.user?.following === false) {
-              showRemovedFeedItem(newItems, item, "item.status.user.following === false", "status");
               continue;
             }
             // 关闭关注推荐
@@ -1163,7 +1155,7 @@ if (url.includes("/interface/sdk/sdkad.php")) {
             }
             newItems.push(item);
           } else if (item?.category === "feed") {
-            const isFriendCircle = isFriendCircleTimeline || isFriendCirclePost(item?.data);
+            const isFriendCircle = isFriendCirclePost(item?.data);
             if (item?.data?.action_button_icon_dic) {
               delete item.data.action_button_icon_dic;
             }
@@ -1175,24 +1167,20 @@ if (url.includes("/interface/sdk/sdkad.php")) {
             }
             if (item.data?.title?.structs && !isFriendCirclePost(item?.data)) {
               // 移除 未关注人消息 (你关注的博主，他自己关注的别的博主的微博消息)
-              showRemovedFeedItem(newItems, item, "item.data.title.structs", "data");
               continue;
             }
             // 快转内容
             if (item?.data?.screen_name_suffix_new?.length > 0) {
               if (item?.data?.screen_name_suffix_new?.[3]?.content === "快转了") {
-                showRemovedFeedItem(newItems, item, "item.data.screen_name_suffix_new[3].content === 快转了", "data");
                 continue;
               }
             }
             // 美妆精选季
             if (item?.data?.title?.text?.includes("精选")) {
-              showRemovedFeedItem(newItems, item, "item.data.title.text includes 精选", "data");
               continue;
             }
             // 未关注博主
             if (item?.data?.user?.following === false) {
-              showRemovedFeedItem(newItems, item, "item.data.user.following === false", "data");
               continue;
             }
             // 关闭关注推荐
@@ -1208,9 +1196,9 @@ if (url.includes("/interface/sdk/sdkad.php")) {
             newItems.push(item); // 管理特别关注按钮
           } else {
             // 移除其他推广
-            showRemovedFeedItem(newItems, item, "item.category is not dynamic/feed/feedBiz", "data");
             continue;
           }
+        }
       }
       obj.items = newItems;
     }
@@ -1504,26 +1492,6 @@ function isAd(data) {
   return false;
 }
 
-function isTimelineAd(data) {
-  if (!data) {
-    return false;
-  }
-  if (isAd(data)) {
-    return true;
-  }
-  const adText = stringifyValue({
-    title: data?.title,
-    title_source: data?.title_source,
-    mblogtypename: data?.mblogtypename,
-    screen_name_suffix_new: data?.screen_name_suffix_new,
-    promotion: data?.promotion,
-    promotion_info: data?.promotion_info,
-    content_auth_info: data?.content_auth_info,
-    ads_material_info: data?.ads_material_info
-  });
-  return /广告|推广|推荐|热推/.test(adText);
-}
-
 function isFriendCirclePost(data) {
   const text = stringifyValue(data);
   const adText = stringifyValue({
@@ -1538,61 +1506,6 @@ function isFriendCirclePost(data) {
     ads_material_info: data?.ads_material_info
   });
   return /好友圈/.test(text) && !/(广告|推广|推荐|热推)/.test(adText);
-}
-
-function isFriendCircleTimelineContext(requestUrl, data) {
-  try {
-    if (/好友圈|100095247606238/.test(decodeURIComponent(requestUrl))) {
-      return true;
-    }
-  } catch (e) {
-    if (/好友圈|100095247606238/.test(requestUrl)) {
-      return true;
-    }
-  }
-  return hasFriendCircleLabel(data, 0);
-}
-
-function hasFriendCircleLabel(value, depth) {
-  if (!value || depth > 8) {
-    return false;
-  }
-  if (typeof value === "string") {
-    return /好友圈/.test(value);
-  }
-  if (typeof value !== "object") {
-    return false;
-  }
-  for (let key in value) {
-    if (["text_raw", "longTextContent", "status"].includes(key)) {
-      continue;
-    }
-    if (hasFriendCircleLabel(value[key], depth + 1)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function showRemovedFeedItem(items, item, reason, dataKey) {
-  if (!debugShowRemovedFeed) {
-    return;
-  }
-  let data = item?.[dataKey] || item?.data || item?.status;
-  if (!data) {
-    item.data = {
-      text: `【微博去广告调试】命中移除规则：${reason}`
-    };
-    items.push(item);
-    return;
-  }
-  const originalText = data?.text || data?.text_raw || data?.title?.text || "";
-  data.title = {
-    text: "微博去广告调试",
-    structs: []
-  };
-  data.text = `【微博去广告调试】命中移除规则：${reason}${originalText ? "\n\n原文预览：" + originalText : ""}`;
-  items.push(item);
 }
 
 function stringifyValue(value) {
