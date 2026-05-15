@@ -1117,11 +1117,16 @@ if (url.includes("/interface/sdk/sdkad.php")) {
           (isFriendCirclePost(item?.status) || !isAd(item?.status))
         ) {
           if (item?.category === "dynamic") {
+            const isFriendCircle = isFriendCirclePost(item?.status);
             if (item?.status?.action_button_icon_dic) {
               delete item.status.action_button_icon_dic;
             }
             removeFeedAd(item?.status); // 信息流推广
             removeVoteInfo(item?.status); // 投票窗口
+            if (isFriendCircle) {
+              newItems.push(item);
+              continue;
+            }
             if (item.status?.title?.structs && !isFriendCirclePost(item?.status)) {
               // 移除 未关注人消息 (你关注的博主，他自己关注的别的博主的微博消息)
               continue;
@@ -1150,11 +1155,16 @@ if (url.includes("/interface/sdk/sdkad.php")) {
             }
             newItems.push(item);
           } else if (item?.category === "feed") {
+            const isFriendCircle = isFriendCirclePost(item?.data);
             if (item?.data?.action_button_icon_dic) {
               delete item.data.action_button_icon_dic;
             }
             removeFeedAd(item?.data); // 信息流推广
             removeVoteInfo(item?.data); // 投票窗口
+            if (isFriendCircle) {
+              newItems.push(item);
+              continue;
+            }
             if (item.data?.title?.structs && !isFriendCirclePost(item?.data)) {
               // 移除 未关注人消息 (你关注的博主，他自己关注的别的博主的微博消息)
               continue;
@@ -1483,16 +1493,27 @@ function isAd(data) {
 }
 
 function isFriendCirclePost(data) {
-  const text = JSON.stringify({
+  const text = stringifyValue(data);
+  const adText = stringifyValue({
     title: data?.title,
     title_source: data?.title_source,
     mblogtypename: data?.mblogtypename,
     screen_name_suffix_new: data?.screen_name_suffix_new,
     visible: data?.visible,
     promotion: data?.promotion,
-    promotion_info: data?.promotion_info
+    promotion_info: data?.promotion_info,
+    content_auth_info: data?.content_auth_info,
+    ads_material_info: data?.ads_material_info
   });
-  return /好友圈/.test(text) && !/(广告|推广|推荐)/.test(text);
+  return /好友圈/.test(text) && !/(广告|推广|推荐|热推)/.test(adText);
+}
+
+function stringifyValue(value) {
+  try {
+    return JSON.stringify(value) || "";
+  } catch (e) {
+    return "";
+  }
 }
 
 // 移除头像挂件,关注按钮
